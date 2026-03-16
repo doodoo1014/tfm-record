@@ -603,7 +603,7 @@ export default function App() {
     if (isSoloMode) {
       finalResults = [{ ...gameScores[0], rank: 1, score: soloResult === '성공' ? 1 : 0, mc: 0, ratingChange: 0 }];
     } else {
-      // 💡 문자열 비교가 아닌 확실한 숫자 비교로 무승부 계산 오류 완벽 방지
+      // 💡 문자열 비교가 아닌 확실한 숫자 비교로 무승부(MC) 계산 오류 완벽 방지
       let sorted = [...gameScores].sort((a,b) => {
         const sA = Number(a.score); const sB = Number(b.score);
         const mA = Number(a.mc || 0); const mB = Number(b.mc || 0);
@@ -620,26 +620,44 @@ export default function App() {
 
     try {
       if (editingGameId) {
+        // 기존 대국 수정
         const { error: gErr } = await supabase.from('games').update({ date: newGameDate, map_name: finalMapName, generation: 0, expansions: selectedExps, player_count: isSoloMode ? 1 : finalResults.length }).eq('id', editingGameId);
         if (gErr) throw gErr;
+        
         await supabase.from('game_results').delete().eq('game_id', editingGameId);
-        const { error: rErr } = await supabase.from('game_results').insert(finalResults.map(r => ({ game_id: editingGameId, player_id: r.playerId, corps: r.corps, score: Number(r.score), mc: Number(r.mc || 0), rank: r.rank, rating_change: r.ratingChange })));
-        if (rErr) throw rErr;
+        const { error: rErr } = await supabase.from('game_results').insert(
+          finalResults.map(r => ({ game_id: editingGameId, player_id: r.playerId, corps: r.corps, score: Number(r.score), mc: Number(r.mc || 0), rank: r.rank, rating_change: r.ratingChange }))
+        );
+        if (rErr) throw new Error(`결과 수정 실패: ${rErr.message}`);
+        
       } else {
+        // 💡 새 대국 추가
         const { data: newGame, error: gameErr } = await supabase.from('games').insert([{ season_id: selectedSeasonId === 'all' ? null : selectedSeasonId, date: newGameDate, map_name: finalMapName, generation: 0, expansions: selectedExps, player_count: isSoloMode ? 1 : finalResults.length }]).select().single();
         if (gameErr) throw gameErr;
-        
-        // 💡 r.mc 값이 공란('')일 때 DB가 저장을 거부하고 빈 카드를 남기는 치명적 에러를 차단하기 위해 Number() 강제 처리 및 에러 감지 로직 추가
-        const { error: rErr } = await supabase.from('game_results').insert(finalResults.map(r => ({ game_id: newGame.id, player_id: r.playerId, corps: r.corps, score: Number(r.score), mc: Number(r.mc || 0), rank: r.rank, rating_change: r.ratingChange })));
+
+        // r.mc 값이 공란('')일 때 0으로 강제 변환하여 DB 저장 거부 에러를 방지
+        const insertData = finalResults.map(r => ({ 
+          game_id: newGame.id, 
+          player_id: r.playerId, 
+          corps: r.corps, 
+          score: Number(r.score), 
+          mc: Number(r.mc || 0), 
+          rank: r.rank, 
+          rating_change: r.ratingChange 
+        }));
+
+        const { error: rErr } = await supabase.from('game_results').insert(insertData);
         if (rErr) {
-          // 만약 결과 저장에 실패하면 껍데기 게임 데이터도 삭제하여 롤백
+          // 💡 게임 결과 저장 실패 시, 껍데기만 만들어진 games 데이터를 즉시 지워버림 (롤백)
           await supabase.from('games').delete().eq('id', newGame.id);
-          throw rErr;
+          throw new Error(`상세 결과 저장 실패 (롤백됨): ${rErr.message}`);
         }
       }
-      setIsNewGameModalOpen(false); fetchInitialData();
+      setIsNewGameModalOpen(false); 
+      fetchInitialData();
     } catch(e) { 
-      alert("대국 저장 중 오류가 발생했습니다.\n(원인: " + e.message + ")"); 
+      alert("대국 저장 중 오류 발생:\n" + e.message); 
+      console.error(e);
     }
   };
 
