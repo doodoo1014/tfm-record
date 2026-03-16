@@ -1309,10 +1309,22 @@ export default function App() {
                     :<input type="text" value={gItem} onChange={e=>setGItem(e.target.value)} placeholder="직접 입력" className="w-full p-4 bg-slate-900 border border-slate-700 rounded-xl text-white outline-none font-bold shadow-inner"/>}
                   </div>
                   
-                  <div className="flex gap-3">
-                    {/* 💡 type을 text로 바꾸고 안내 문구를 변경했습니다. */}
-                    <input type="text" inputMode="text" value={gValue} onChange={e=>setGValue(e.target.value)} placeholder="수치 또는 문자 입력 (- 기호 가능)" className="flex-1 p-4 bg-slate-950 border border-orange-500/50 text-orange-500 rounded-xl text-2xl font-black outline-none focus:border-orange-500 shadow-inner"/>
-                    <button onClick={handleAddToGuinnessBatch} className="px-8 bg-slate-900 border border-slate-600 text-white font-black rounded-xl hover:bg-slate-700 active:scale-95 transition-all text-base shadow-lg">추가</button>
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    {/* 💡 모바일에서 넘치지 않도록 flex-col 적용 및 폰트 크기 반응형 조절 */}
+                    <input 
+                      type="text" 
+                      inputMode="text" 
+                      value={gValue} 
+                      onChange={e=>setGValue(e.target.value)} 
+                      placeholder="수치 또는 문자 입력 (- 가능)" 
+                      className="flex-1 p-4 bg-slate-950 border border-orange-500/50 text-orange-500 rounded-xl text-lg sm:text-2xl font-black outline-none focus:border-orange-500 shadow-inner min-w-0"
+                    />
+                    <button 
+                      onClick={handleAddToGuinnessBatch} 
+                      className="w-full sm:w-auto px-8 py-4 sm:py-0 bg-slate-900 border border-slate-600 text-white font-black rounded-xl hover:bg-slate-700 active:scale-95 transition-all text-base shadow-lg shrink-0"
+                    >
+                      추가
+                    </button>
                   </div>
                 </div>
               ) : (
