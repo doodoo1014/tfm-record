@@ -447,7 +447,8 @@ export default function App() {
         });
 
         const targetRes = game.results.find(x => x.playerId === res.playerId);
-        if (targetRes) { targetRes.rank = res.rank; targetRes.ratingChange = res.ratingChange; }
+        // 💡 렌더링 시 현재 ELO 점수(newRating)를 쓸 수 있도록 엔진에서 값 주입
+        if (targetRes) { targetRes.rank = res.rank; targetRes.ratingChange = res.ratingChange; targetRes.newRating = res.newRating; }
       });
     });
 
@@ -470,7 +471,11 @@ export default function App() {
         });
       });
     });
-    return Object.values(stats).sort((a,b) => b.plays - a.plays);
+    // 💡 픽수(plays)가 많은 순으로 1차 정렬, 픽수가 같다면 승률이 높은 순으로 2차 정렬
+    return Object.values(stats).sort((a, b) => {
+      if (b.plays !== a.plays) return b.plays - a.plays;
+      return (b.wins / b.plays) - (a.wins / a.plays);
+    });
   }, [filteredGames]);
 
   // ==========================================
@@ -721,7 +726,7 @@ export default function App() {
         finalBatch.push({
           player_count: b.playerCount, category: saveCategory, item_name: b.itemName, record_value: b.recordValue, 
           player_id: b.playerId, corps: b.corps, game_id: b.gameId, date: b.date,
-          is_approved: isMaster, 
+          is_approved: isAdminOrMaster, // 💡 관리자가 등록할 때도 즉시 승인되도록 수정
           is_hall_of_fame: false
         });
       } else {
@@ -730,12 +735,20 @@ export default function App() {
     }
 
     if (finalBatch.length === 0) return alert("입력하신 모든 기록이 현재 1위 기록과 같거나 낮아 등록이 취소되었습니다.");
-    if (rejectedCount > 0) alert(`${rejectedCount}개의 기록은 기존 1위보다 낮아 제외되었습니다. 나머지 ${finalBatch.length}개를 서버에 전송합니다.`);
-    else if (!isMaster) alert("서버에 전송 완료! 마스터의 승인 후 갱신됩니다.");
+    
+    // 💡 에러 발생 시 사용자에게 즉각 팝업으로 원인을 알려주도록 try-catch 역할 추가
+    const { error } = await supabase.from('guinness_records').insert(finalBatch);
+    if (error) {
+      alert(`DB 저장 중 오류가 발생했습니다.\n(원인: ${error.message})\n\n※ DB에 숫자형(numeric)으로 세팅된 항목에 문자를 넣으려 시도했다면 에러가 납니다.`);
+      return;
+    }
 
-    await supabase.from('guinness_records').insert(finalBatch);
+    if (rejectedCount > 0) alert(`${rejectedCount}개의 기록은 기존 1위보다 낮아 제외되었습니다. 나머지 ${finalBatch.length}개 서버 등록 완료!`);
+    else if (!isAdminOrMaster) alert("서버에 전송 완료! 관리자의 승인 후 갱신됩니다.");
+    else alert("기네스 등록이 성공적으로 완료되었습니다!");
+
     setIsGuinnessModalOpen(false); 
-    setGuinnessBatch([]); setGPlayerId(''); setGGameId(''); setGCorps([]); 
+    setGuinnessBatch([]); setGPlayerIds([]); setGGameId(''); 
     fetchInitialData();
   };
 
@@ -777,15 +790,45 @@ export default function App() {
             <Rocket size={22} className={ACCENT_ORANGE}/> 
             {activeNav === '업데이트' ? '패치 노트' : activeNav === '기록' ? '개척 일지' : activeNav === '랭킹' ? '기업가 랭킹' : activeNav === '통계' ? '화성 통계' : '기네스 북'}
           </h1>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
+            {/* 1. 마작 사이트 이동 (주황/갈색 테마) */}
+            <button 
+              onClick={() => window.open('https://mahjong-record-v2.vercel.app/', '_blank')}
+              className="flex items-center gap-1.5 text-[11px] bg-orange-700/80 px-2.5 py-1.5 rounded-lg font-black text-white hover:bg-orange-600 transition-colors shadow-sm"
+              title="마작 기록실로 이동"
+            >
+              <span className="text-[12px] leading-none -mt-0.5">🀄</span> 마작
+            </button>
+
             {currentUser ? (
               <>
-                {isAdminOrMaster && <button onClick={() => setIsMasterModalOpen(true)} className="p-1.5 bg-slate-800 rounded-lg hover:bg-slate-700 text-green-500 transition-colors relative">
-                  <ShieldCheck size={16}/>
-                  {(guinnessRecords.filter(r=>!r.is_approved).length > 0 || allUsers.filter(u=>!u.is_approved).length > 0) && <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse"/>}
-                </button>}
-                {isAdminOrMaster && <button onClick={() => setIsSeasonModalOpen(true)} className="p-1.5 bg-slate-800 rounded-lg hover:bg-slate-700 text-orange-500 transition-colors"><Settings size={16}/></button>}
-                <button onClick={handleLogout} className="flex items-center gap-1 text-[10px] bg-slate-800 border border-slate-700 px-2 py-1.5 rounded-lg font-bold text-slate-300 hover:text-white"><LogOut size={12}/> {currentUser.username}</button>
+                {/* 2. 로그인명 (녹색 테마 + 마스터 왕관) */}
+                <div className="flex items-center gap-1.5 text-[11px] bg-emerald-800/80 px-2.5 py-1.5 rounded-lg font-black text-white shadow-sm">
+                  {isMaster && <Crown size={14} className="text-yellow-400" />}
+                  {currentUser.username}
+                </div>
+
+                {/* 3. 시즌 관리 (녹색 테마) */}
+                {isAdminOrMaster && (
+                  <button onClick={() => setIsSeasonModalOpen(true)} className="p-1.5 bg-emerald-800/80 rounded-lg hover:bg-emerald-700 text-white transition-colors shadow-sm" title="시즌 관리">
+                    <Settings size={14}/>
+                  </button>
+                )}
+
+                {/* 4. 마스터/관리자 관리 보드 (노란/오렌지 테마) */}
+                {isAdminOrMaster && (
+                  <button onClick={() => setIsMasterModalOpen(true)} className="p-1.5 bg-amber-600/90 rounded-lg hover:bg-amber-500 text-white transition-colors relative shadow-sm" title="통합 관리 보드">
+                    <Users size={14}/>
+                    {(guinnessRecords.filter(r=>!r.is_approved).length > 0 || (isMaster && allUsers.filter(u=>!u.is_approved).length > 0)) && (
+                      <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse border border-slate-900"/>
+                    )}
+                  </button>
+                )}
+
+                {/* 5. 로그아웃 (녹색 테마 + 노란 자물쇠 아이콘) */}
+                <button onClick={handleLogout} className="p-1.5 bg-emerald-800/80 rounded-lg hover:bg-emerald-700 text-yellow-400 transition-colors shadow-sm" title="로그아웃">
+                  <Unlock size={14}/>
+                </button>
               </>
             ) : (
               <button onClick={() => { setAuthMode('login'); setIsAuthModalOpen(true); }} className="flex items-center gap-1 text-[10px] bg-orange-600 px-3 py-1.5 rounded-lg font-bold text-white hover:bg-orange-500"><Lock size={12}/> 로그인</button>
@@ -830,7 +873,12 @@ export default function App() {
                       </div>
                       <div className="flex flex-col items-end">
                         <span className={`text-sm font-black ${ACCENT_ORANGE}`}>{g.isSolo ? (r.score===1 ? '성공' : '실패') : r.score + ' VP'}</span>
-                        {!g.isSolo && <span className={`text-[10px] font-black ${r.ratingChange > 0 ? 'text-green-500' : 'text-red-500'}`}>{r.ratingChange > 0 ? '▲ ' : '▼ '}{Math.abs(r.ratingChange||0)}</span>}
+                        {/* 💡 요청하신 대로 ELO 점수와 등락을 한 줄에 깔끔하게 표기 */}
+                        {!g.isSolo && (
+                          <span className={`text-[10px] font-black ${r.ratingChange >= 0 ? 'text-green-500' : 'text-red-500'} mt-0.5`}>
+                            {r.newRating} ({r.ratingChange >= 0 ? '▲' : '▼'} {Math.abs(r.ratingChange||0)})
+                          </span>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -924,14 +972,15 @@ export default function App() {
                     <div key={r.id} className="relative bg-gradient-to-br from-yellow-900 via-slate-900 to-slate-900 p-6 rounded-[2rem] border border-yellow-500/30 shadow-[0_10px_30px_rgba(234,179,8,0.15)] overflow-hidden group">
                       <Crown className="absolute -right-6 -bottom-6 w-36 h-36 text-yellow-500/10 rotate-12" />
                       
-                      {/* 💡 관리자 및 마스터 권한: 명예의 전당 해제 및 영구 삭제 버튼 */}
+                      {/* 💡 관리자 권한: 영구 삭제 버튼은 없애고, 안전하게 '일반 기록 강등' 기능만 제공 */}
                       {isAdminOrMaster && (
                         <div className="absolute top-4 right-4 flex gap-2 z-20 transition-all opacity-0 group-hover:opacity-100">
-                          <button onClick={(e) => { e.stopPropagation(); handleToggleHallOfFame(r.id, r.is_hall_of_fame); }} className="bg-slate-950/80 p-2.5 rounded-full text-slate-500 hover:text-yellow-500 border border-slate-800" title="명예의 전당에서 내리기 (일반 기록으로 복귀)">
-                            <Crown size={16}/>
-                          </button>
-                          <button onClick={(e) => { e.stopPropagation(); handleDeleteGuinnessRecord(r.id); }} className="bg-slate-950/80 p-2.5 rounded-full text-slate-500 hover:text-red-500 border border-slate-800" title="기록 영구 삭제 (복구 불가)">
-                            <Trash2 size={16}/>
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); handleToggleHallOfFame(r.id, r.is_hall_of_fame); }} 
+                            className="bg-slate-950/80 px-3 py-2 rounded-xl text-slate-400 hover:text-yellow-500 border border-slate-800 text-[10px] font-black flex items-center gap-1.5" 
+                            title="명예의 전당 타이틀을 박탈하고 일반 기네스 기록으로 돌려보냅니다."
+                          >
+                            <ChevronDown size={14} strokeWidth={3}/> 일반 기록으로 강등
                           </button>
                         </div>
                       )}
@@ -1087,8 +1136,8 @@ export default function App() {
               <button onClick={() => setAuthMode('signup')} className={`flex-1 pb-3 text-sm font-black transition-all ${authMode==='signup'?'text-orange-500 border-b-2 border-orange-500':'text-slate-500'}`}>계정생성</button>
             </div>
             <div className="space-y-5">
-              <div className="space-y-1"><span className="text-[10px] font-bold text-slate-500 ml-1">이름</span><input type="text" placeholder="예: ywc1014" value={authUsername} onChange={e=>setAuthUsername(e.target.value)} className="w-full p-3.5 bg-slate-900 border border-slate-700 rounded-xl text-white outline-none focus:border-orange-500 font-bold"/></div>
-              <div className="space-y-1"><span className="text-[10px] font-bold text-slate-500 ml-1">비밀 PIN (4자리)</span><input type="password" maxLength={4} placeholder="숫자만 입력" value={authPin} onChange={e=>setAuthPin(e.target.value)} className="w-full p-3.5 bg-slate-900 border border-slate-700 rounded-xl text-white outline-none focus:border-orange-500 font-black tracking-[0.5em] text-center"/></div>
+              <div className="space-y-1"><span className="text-[10px] font-bold text-slate-500 ml-1">이름</span><input type="text" placeholder="예: 홍길동" value={authUsername} onChange={e=>setAuthUsername(e.target.value)} className="w-full p-3.5 bg-slate-900 border border-slate-700 rounded-xl text-white outline-none focus:border-orange-500 font-bold"/></div>
+              <div className="space-y-1"><span className="text-[10px] font-bold text-slate-500 ml-1">비밀 PIN (4자리)</span><input type="password" maxLength={4} placeholder="숫자만 입력" value={authPin} onChange={e=>setAuthPin(e.target.value)} className="w-full p-3.5 bg-slate-900 border border-slate-700 rounded-xl text-white outline-none focus:border-orange-500 font-black"/></div>
               {authMode==='signup' && <div className="space-y-1"><span className="text-[10px] font-bold text-slate-500 ml-1">권한 구분</span><select value={authRoleReq} onChange={e=>setAuthRoleReq(e.target.value)} className="w-full p-3.5 bg-slate-900 border border-slate-700 rounded-xl text-white outline-none font-bold"><option>개척자</option><option>관리자</option></select></div>}
               <button onClick={authMode==='login'?handleLogin:handleSignup} className={`w-full ${ACCENT_BG} text-white font-black py-4 rounded-2xl shadow-xl active:scale-95 transition-transform mt-2`}>{authMode==='login'?'시스템 접속':'개척자 등록'}</button>
             </div>
