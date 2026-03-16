@@ -518,11 +518,11 @@ export default function App() {
     const specialAwardsList = Array.from(dynamicSpecialAwards).sort();
 
     const groups = [
-      { id: '기본 기록', title: '핵심 기록 (Max VP, Min/Max TR)', items: CORE_ITEMS },
-      { id: '자원', title: '최다 자원 축적 기록', items: RESOURCE_ITEMS },
-      { id: '생산력', title: '최고 자원 생산력 기록', items: PRODUCTION_ITEMS },
-      { id: '최대 태그', title: '최대 태그 수집 기록', items: TAG_ITEMS },
-      { id: '특수자원', title: '특수 자원 카드별 기록', isNested: true, subGroups: [
+      { id: '기본 기록', title: '기본 기록 (Max VP, Min/Max TR)', items: CORE_ITEMS },
+      { id: '자원', title: '기본 자원', items: RESOURCE_ITEMS },
+      { id: '생산력', title: '생산력', items: PRODUCTION_ITEMS },
+      { id: '최대 태그', title: '최대 태그 수', items: TAG_ITEMS },
+      { id: '특수자원', title: '특수 자원', isNested: true, subGroups: [
           { id: '특수자원_동물자원', title: '동물자원 (10+)', items: SPECIAL_RESOURCES['동물자원'] },
           { id: '특수자원_미생물자원', title: '미생물자원 (20+)', items: SPECIAL_RESOURCES['미생물자원'] },
           { id: '특수자원_부양체자원', title: '부양체자원 (10+)', items: SPECIAL_RESOURCES['부양체자원'] },
@@ -530,8 +530,8 @@ export default function App() {
           { id: '특수자원_과학자원', title: '과학자원', items: SPECIAL_RESOURCES['과학자원'] },
           { id: '특수자원_기타자원', title: '기타자원', items: SPECIAL_RESOURCES['기타자원'] }
       ]},
-      { id: '기업상', title: '공식 기업상 달성 수치', items: AWARD_ITEMS },
-      { id: '특별상', title: '특별상 (기타 커스텀 요모조모)', items: specialAwardsList }
+      { id: '기업상', title: '기업상', items: AWARD_ITEMS },
+      { id: '특별상', title: '특별상', items: specialAwardsList }
     ];
 
     const result = [];
