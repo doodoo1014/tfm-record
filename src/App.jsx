@@ -601,12 +601,18 @@ export default function App() {
     const finalMapName = isSoloMode ? `${newGameMap} [${soloType}]` : newGameMap;
     let finalResults = [];
     if (isSoloMode) {
-      finalResults = [{ ...gameScores[0], rank: 1, score: soloResult === '성공' ? 1 : 0, ratingChange: 0 }];
+      finalResults = [{ ...gameScores[0], rank: 1, score: soloResult === '성공' ? 1 : 0, mc: 0, ratingChange: 0 }];
     } else {
-      let sorted = [...gameScores].sort((a,b) => b.score !== a.score ? b.score - a.score : b.mc - a.mc);
+      // 💡 문자열 비교가 아닌 확실한 숫자 비교로 무승부 계산 오류 완벽 방지
+      let sorted = [...gameScores].sort((a,b) => {
+        const sA = Number(a.score); const sB = Number(b.score);
+        const mA = Number(a.mc || 0); const mB = Number(b.mc || 0);
+        if (sA !== sB) return sB - sA;
+        return mB - mA;
+      });
       let currentRank = 1;
       sorted = sorted.map((s, idx, arr) => {
-        if (idx > 0 && s.score === arr[idx-1].score && s.mc === arr[idx-1].mc) {} else currentRank = idx + 1;
+        if (idx > 0 && Number(s.score) === Number(arr[idx-1].score) && Number(s.mc||0) === Number(arr[idx-1].mc||0)) {} else currentRank = idx + 1;
         return { ...s, rank: currentRank, rating: players.find(p => p.id === s.playerId)?.rating || 1500 };
       });
       finalResults = calculateMultiplayerELO(sorted);
@@ -614,16 +620,27 @@ export default function App() {
 
     try {
       if (editingGameId) {
-        await supabase.from('games').update({ date: newGameDate, map_name: finalMapName, generation: 0, expansions: selectedExps, player_count: isSoloMode ? 1 : finalResults.length }).eq('id', editingGameId);
+        const { error: gErr } = await supabase.from('games').update({ date: newGameDate, map_name: finalMapName, generation: 0, expansions: selectedExps, player_count: isSoloMode ? 1 : finalResults.length }).eq('id', editingGameId);
+        if (gErr) throw gErr;
         await supabase.from('game_results').delete().eq('game_id', editingGameId);
-        await supabase.from('game_results').insert(finalResults.map(r => ({ game_id: editingGameId, player_id: r.playerId, corps: r.corps, score: r.score, mc: r.mc, rank: r.rank, rating_change: r.ratingChange })));
+        const { error: rErr } = await supabase.from('game_results').insert(finalResults.map(r => ({ game_id: editingGameId, player_id: r.playerId, corps: r.corps, score: Number(r.score), mc: Number(r.mc || 0), rank: r.rank, rating_change: r.ratingChange })));
+        if (rErr) throw rErr;
       } else {
         const { data: newGame, error: gameErr } = await supabase.from('games').insert([{ season_id: selectedSeasonId === 'all' ? null : selectedSeasonId, date: newGameDate, map_name: finalMapName, generation: 0, expansions: selectedExps, player_count: isSoloMode ? 1 : finalResults.length }]).select().single();
         if (gameErr) throw gameErr;
-        await supabase.from('game_results').insert(finalResults.map(r => ({ game_id: newGame.id, player_id: r.playerId, corps: r.corps, score: r.score, mc: r.mc, rank: r.rank, rating_change: r.ratingChange })));
+        
+        // 💡 r.mc 값이 공란('')일 때 DB가 저장을 거부하고 빈 카드를 남기는 치명적 에러를 차단하기 위해 Number() 강제 처리 및 에러 감지 로직 추가
+        const { error: rErr } = await supabase.from('game_results').insert(finalResults.map(r => ({ game_id: newGame.id, player_id: r.playerId, corps: r.corps, score: Number(r.score), mc: Number(r.mc || 0), rank: r.rank, rating_change: r.ratingChange })));
+        if (rErr) {
+          // 만약 결과 저장에 실패하면 껍데기 게임 데이터도 삭제하여 롤백
+          await supabase.from('games').delete().eq('id', newGame.id);
+          throw rErr;
+        }
       }
       setIsNewGameModalOpen(false); fetchInitialData();
-    } catch(e) { alert("저장 실패: " + e.message); }
+    } catch(e) { 
+      alert("대국 저장 중 오류가 발생했습니다.\n(원인: " + e.message + ")"); 
+    }
   };
 
   const handleDeleteGame = async (id) => {
@@ -873,7 +890,7 @@ export default function App() {
                       </div>
                       <div className="flex flex-col items-end">
                         <span className={`text-sm font-black ${ACCENT_ORANGE}`}>{g.isSolo ? (r.score===1 ? '성공' : '실패') : r.score + ' VP'}</span>
-                        {/* 💡 요청하신 대로 ELO 점수와 등락을 한 줄에 깔끔하게 표기 */}
+                        {/* 💡 요청하신 대로 ELO 점수와 등락을 함께 깔끔하게 표기 */}
                         {!g.isSolo && (
                           <span className={`text-[10px] font-black ${r.ratingChange >= 0 ? 'text-green-500' : 'text-red-500'} mt-0.5`}>
                             {r.newRating} ({r.ratingChange >= 0 ? '▲' : '▼'} {Math.abs(r.ratingChange||0)})
